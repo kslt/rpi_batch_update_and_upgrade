@@ -58,6 +58,8 @@
 <body>
   <h1>Uppdatera alla Raspberry Pis</h1>
   <button id="updateBtn">Uppdatera nu</button>
+  <button id="rebootBtn">Reboot alla Pis</button>
+
 
   <!-- Progress bar -->
   <div class="progress-container">
@@ -154,6 +156,31 @@
         logOutput.textContent += 'Statusuppdatering avslutad eller anslutningsfel.\n';
         evtSource.close();
       };
+    });
+
+    const rebootBtn = document.getElementById('rebootBtn');
+
+    const sendCommand = (commandName, command) => {
+      logOutput.textContent += `\nStartar: ${commandName}\n`;
+      const evtSource = new EventSource(`/command-stream?cmd=${encodeURIComponent(command)}`);
+
+      evtSource.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        const host = data.host || 'INFO';
+
+        // Logga allt i stora loggfönstret
+        logOutput.textContent += `[${host}] ${data.status}: ${data.message}\n`;
+        logOutput.scrollTop = logOutput.scrollHeight;
+      };
+
+      evtSource.onerror = () => {
+        logOutput.textContent += `${commandName} avslutad eller anslutningsfel.\n`;
+        evtSource.close();
+      };
+    };
+
+    rebootBtn.addEventListener('click', () => {
+      sendCommand('Rebootar alla Pis', 'sudo reboot');
     });
   </script>
 </body>
