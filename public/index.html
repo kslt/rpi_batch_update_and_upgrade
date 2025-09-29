@@ -4,7 +4,10 @@
   <meta charset="UTF-8">
   <title>Raspberry Pi Updater</title>
   <style>
-    body { font-family: sans-serif; }
+    body { font-family: sans-serif; margin: 20px; }
+    button { margin-bottom: 15px; }
+
+    /* Progress bar */
     .progress-container {
       width: 100%;
       background-color: #ddd;
@@ -22,19 +25,34 @@
       line-height: 20px;
       transition: width 0.3s;
     }
+
+    /* Pi status */
     .pi-status { display: flex; align-items: center; margin-bottom: 5px; }
     .dot {
       width: 12px;
       height: 12px;
       border-radius: 50%;
       margin-right: 8px;
-      background-color: black; /* default */
+      background-color: black;
     }
     .status-text { font-weight: bold; }
     .status-black { color: black; }
     .status-green { color: green; }
     .status-red { color: red; }
     .status-yellow { color: goldenrod; }
+
+    /* Stort statusfönster */
+    #logOutput {
+      margin-top: 15px;
+      padding: 10px;
+      background-color: #1e1e1e;
+      color: #eee;
+      font-family: monospace;
+      height: 300px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      border-radius: 5px;
+    }
   </style>
 </head>
 <body>
@@ -46,12 +64,17 @@
     <div class="progress-bar" id="progressBar">0%</div>
   </div>
 
+  <!-- Lista med Pis -->
   <div id="statusContainer"></div>
+
+  <!-- Stort loggfönster -->
+  <div id="logOutput"></div>
 
   <script>
     const button = document.getElementById('updateBtn');
     const container = document.getElementById('statusContainer');
     const progressBar = document.getElementById('progressBar');
+    const logOutput = document.getElementById('logOutput');
 
     let piElements = {};
     let totalPis = 0;
@@ -59,6 +82,7 @@
 
     button.addEventListener('click', () => {
       container.innerHTML = '';
+      logOutput.textContent = '';
       progressBar.style.width = '0%';
       progressBar.textContent = '0%';
       piElements = {};
@@ -69,6 +93,10 @@
       evtSource.onmessage = (event) => {
         const data = JSON.parse(event.data);
         let host = data.host || 'INFO';
+
+        // Logga allt i stora loggfönstret
+        logOutput.textContent += `[${host}] ${data.status}: ${data.message}\n`;
+        logOutput.scrollTop = logOutput.scrollHeight;
 
         // Skapa element för host om det inte finns
         if (!piElements[host] && host !== 'INFO') {
@@ -123,9 +151,7 @@
       };
 
       evtSource.onerror = () => {
-        const info = document.createElement('div');
-        info.textContent = 'Statusuppdatering avslutad eller anslutningsfel.';
-        container.appendChild(info);
+        logOutput.textContent += 'Statusuppdatering avslutad eller anslutningsfel.\n';
         evtSource.close();
       };
     });
