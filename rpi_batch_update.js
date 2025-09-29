@@ -1,55 +1,131 @@
-// server.js
 require("dotenv").config();
 const express = require("express");
 const { NodeSSH } = require("node-ssh");
 
 const app = express();
-const ssh = new NodeSSH();
 
-// Bygg host-listan från .env
-const hosts = process.env.HOSTS.split(",").map(name => ({
-  host: name.trim(),
+// Bygg host-listan från .env, trimma mellanslag
+const hosts = process.env.HOSTS.split(",").map(host => ({
+  host: host.trim(),
   username: process.env.USERNAME,
   password: process.env.PASSWORD,
+  tryKeyboard: false,  // Avstänger keyboard-interactive
+  agent: false,        // Avstänger SSH-agent / nycklar
+  readyTimeout: 30000  // Längre timeout för nätverk
 }));
 
-// GET / → enkel startsida
+// Lista för SSE-klienter
+let clients = [];
+
+// GET / → startsida med live-status
 app.get("/", (req, res) => {
   res.send(`
     <h1>Raspberry Pi Updater</h1>
-    <p>Skicka en <strong>POST</strong> till <code>/upgrade</code> för att uppgradera alla Pis.</p>
-    <form action="/upgrade" method="post">
+    <p>Klicka på knappen för att uppgradera alla Pis.</p>
+    <form id="upgradeForm">
       <button type="submit">Uppgradera alla Pis 🚀</button>
     </form>
+    <h2>Status:</h2>
+    <div id="status"></div>
+
+    <script>
+      const statusEl = document.getElementById("status");
+      const evtSource = new EventSource("/events");
+
+      evtSource.onmessage = function(event) {
+        const message = event.data;
+        let color = "black";
+
+        if (message.includes("✅") || message.includes("klar") || message.includes("Reboot skickad")) {
+          color = "green";
+        } else if (message.includes("⚠️")) {
+          color = "orange";
+        } else if (message.includes("❌") || message.includes("Misslyckades")) {
+          color = "red";
+        }
+
+        const p = document.createElement("p");
+        p.style.color = color;
+        p.textContent = message;
+        statusEl.appendChild(p);
+        statusEl.scrollTop = statusEl.scrollHeight; // scrolla automatiskt
+      };
+
+      document.getElementById("upgradeForm").addEventListener("submit", async e => {
+        e.preventDefault();
+        await fetch("/upgrade", { method: "POST" });
+      });
+    </script>
+    <style>
+      #status {
+        border: 1px solid #ccc;
+        padding: 10px;
+        height: 400px;
+        overflow-y: auto;
+        background: #f9f9f9;
+        font-family: monospace;
+      }
+      button {
+        padding: 10px 20px;
+        font-size: 16px;
+        margin-bottom: 10px;
+      }
+    </style>
   `);
 });
 
-// Funktion som uppgraderar en Pi
+// SSE endpoint
+app.get("/events", (req, res) => {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders();
+
+  clients.push(res);
+
+  req.on("close", () => {
+    clients = clients.filter(c => c !== res);
+  });
+});
+
+// Skicka meddelande till alla klienter
+function sendToClients(message) {
+  clients.forEach(client => client.write(`data: ${message}\n\n`));
+}
+
+// Funktion som uppgraderar en Pi med debug
 async function upgradePi(config) {
-  const session = new NodeSSH();
+  const ssh = new NodeSSH();
   try {
-    await session.connect(config);
-    console.log(`✅ Ansluten till ${config.host}`);
+    sendToClients(`🔗 Ansluter till ${config.host}...`);
+    await ssh.connect({
+      ...config,
+      debug: (msg) => sendToClients(`[DEBUG][${config.host}] ${msg}`)
+    });
+    sendToClients(`✅ Ansluten till ${config.host}`);
 
-    const result = await session.execCommand("sudo apt update && sudo apt -y full-upgrade");
-    console.log(`📦 Uppdatering ${config.host}:`, result.stdout);
-    if (result.stderr) console.error(`⚠️ Fel ${config.host}:`, result.stderr);
+    const result = await ssh.execCommand("sudo apt update && sudo apt -y full-upgrade");
+    sendToClients(`📦 Uppdatering ${config.host} klar`);
+    if (result.stderr) sendToClients(`⚠️ Fel på ${config.host}: ${result.stderr}`);
 
-    await session.execCommand("sudo reboot");
-    console.log(`🔄 Reboot skickad till ${config.host}`);
+    await ssh.execCommand("sudo reboot");
+    sendToClients(`🔄 Reboot skickad till ${config.host}`);
   } catch (err) {
-    console.error(`❌ Misslyckades på ${config.host}:`, err);
+    sendToClients(`❌ Misslyckades på ${config.host}: ${err.message}`);
   } finally {
-    session.dispose();
+    ssh.dispose();
   }
 }
 
-// POST /upgrade → triggar uppgradering
+// POST /upgrade → triggar uppgradering sekventiellt
 app.post("/upgrade", async (req, res) => {
-  res.send("<p>🚀 Uppgradering startad, kolla loggar i konsolen...</p>");
+  res.send("<p>🚀 Uppgradering startad, kolla status nedan!</p>");
+
   for (const host of hosts) {
-    upgradePi(host);
+    await upgradePi(host);
   }
+
+  sendToClients("✅ Alla uppgraderingar klara!");
 });
 
 // Starta servern

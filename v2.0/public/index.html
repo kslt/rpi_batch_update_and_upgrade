@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8">
+  <title>Raspberry Pi Updater</title>
+  <style>
+    body { font-family: sans-serif; }
+    .progress-container {
+      width: 100%;
+      background-color: #ddd;
+      height: 20px;
+      margin-bottom: 15px;
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    .progress-bar {
+      height: 100%;
+      width: 0%;
+      background-color: green;
+      text-align: center;
+      color: white;
+      line-height: 20px;
+      transition: width 0.3s;
+    }
+    .pi-status { display: flex; align-items: center; margin-bottom: 5px; }
+    .dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      margin-right: 8px;
+      background-color: black; /* default */
+    }
+    .status-text { font-weight: bold; }
+    .status-black { color: black; }
+    .status-green { color: green; }
+    .status-red { color: red; }
+    .status-yellow { color: goldenrod; }
+  </style>
+</head>
+<body>
+  <h1>Uppdatera alla Raspberry Pis</h1>
+  <button id="updateBtn">Uppdatera nu</button>
+
+  <!-- Progress bar -->
+  <div class="progress-container">
+    <div class="progress-bar" id="progressBar">0%</div>
+  </div>
+
+  <div id="statusContainer"></div>
+
+  <script>
+    const button = document.getElementById('updateBtn');
+    const container = document.getElementById('statusContainer');
+    const progressBar = document.getElementById('progressBar');
+
+    let piElements = {};
+    let totalPis = 0;
+    let finishedPis = 0;
+
+    button.addEventListener('click', () => {
+      container.innerHTML = '';
+      progressBar.style.width = '0%';
+      progressBar.textContent = '0%';
+      piElements = {};
+      finishedPis = 0;
+
+      const evtSource = new EventSource('/update-stream');
+
+      evtSource.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        let host = data.host || 'INFO';
+
+        // Skapa element för host om det inte finns
+        if (!piElements[host] && host !== 'INFO') {
+          const row = document.createElement('div');
+          row.classList.add('pi-status');
+
+          const dot = document.createElement('div');
+          dot.classList.add('dot');
+
+          const text = document.createElement('span');
+          text.classList.add('status-text', 'status-black');
+          text.textContent = host + ': ' + (data.message || '');
+
+          row.appendChild(dot);
+          row.appendChild(text);
+          container.appendChild(row);
+
+          piElements[host] = { dot, text };
+          totalPis = Object.keys(piElements).length;
+        } else if (piElements[host]) {
+          piElements[host].text.textContent = host + ': ' + (data.message || '');
+        }
+
+        // sätt färg på prick och text
+        let dotColor = 'black';
+        let textClass = 'status-black';
+
+        if (data.status === 'done') {
+          dotColor = 'green';
+          textClass = 'status-green';
+          finishedPis++;
+        } else if (data.status === 'error') {
+          dotColor = 'red';
+          textClass = 'status-red';
+          finishedPis++;
+        } else if (/default/i.test(data.message)) {
+          dotColor = 'yellow';
+          textClass = 'status-yellow';
+        }
+
+        if (piElements[host]) {
+          piElements[host].dot.style.backgroundColor = dotColor;
+          piElements[host].text.className = 'status-text ' + textClass;
+        }
+
+        // Uppdatera progress bar
+        if (totalPis > 0) {
+          let percent = Math.min(Math.round((finishedPis / totalPis) * 100), 100);
+          progressBar.style.width = percent + '%';
+          progressBar.textContent = percent + '%';
+        }
+      };
+
+      evtSource.onerror = () => {
+        const info = document.createElement('div');
+        info.textContent = 'Statusuppdatering avslutad eller anslutningsfel.';
+        container.appendChild(info);
+        evtSource.close();
+      };
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8">
+  <title>Raspberry Pi Updater</title>
+  <style>
+    body { font-family: sans-serif; }
+    pre { background: #f0f0f0; padding: 1em; height: 400px; overflow-y: auto; }
+  </style>
+</head>
+<body>
+  <h1>Uppdatera alla Raspberry Pis</h1>
+  <button id="updateBtn">Uppdatera nu</button>
+  <pre id="output"></pre>
+
+  <script>
+    const button = document.getElementById('updateBtn');
+    const output = document.getElementById('output');
+
+    button.addEventListener('click', () => {
+      output.textContent = '';
+      const evtSource = new EventSource('/update-stream');
+
+      evtSource.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        output.textContent += `[${data.host || 'INFO'}] ${data.status}: ${data.message}\n`;
+        output.scrollTop = output.scrollHeight;
+      };
+
+      evtSource.onerror = () => {
+        output.textContent += 'Statusuppdatering avslutad eller anslutningsfel.\n';
+        evtSource.close();
+      };
+    });
+  </script>
+</body>
+</html>
