@@ -2,10 +2,10 @@
 <html lang="sv">
 <head>
   <meta charset="UTF-8">
-  <title>Raspberry Pi Updater</title>
+  <title>Raspberry Pi Manager</title>
   <style>
     body { font-family: sans-serif; margin: 20px; }
-    button { margin-bottom: 15px; }
+    button { margin-bottom: 15px; margin-right: 10px; }
 
     /* Progress bar */
     .progress-container {
@@ -56,10 +56,12 @@
   </style>
 </head>
 <body>
-  <h1>Uppdatera alla Raspberry Pis</h1>
-  <button id="updateBtn">Uppdatera nu</button>
-  <button id="rebootBtn">Reboot alla Pis</button>
+  <h1>Raspberry Pi Manager</h1>
 
+  <button id="updateBtn">Uppdatera alla Pis</button>
+  <button id="rebootBtn">Reboota alla Pis</button>
+  <button id="unattendedBtn">Aktivera Unattended Upgrades</button>
+  <button id="cmdBtn">Kör eget kommando</button>
 
   <!-- Progress bar -->
   <div class="progress-container">
@@ -73,7 +75,6 @@
   <div id="logOutput"></div>
 
   <script>
-    const button = document.getElementById('updateBtn');
     const container = document.getElementById('statusContainer');
     const progressBar = document.getElementById('progressBar');
     const logOutput = document.getElementById('logOutput');
@@ -82,95 +83,69 @@
     let totalPis = 0;
     let finishedPis = 0;
 
-    button.addEventListener('click', () => {
-      container.innerHTML = '';
-      logOutput.textContent = '';
-      progressBar.style.width = '0%';
-      progressBar.textContent = '0%';
-      piElements = {};
-      finishedPis = 0;
-
-      const evtSource = new EventSource('/update-stream');
-
-      evtSource.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        let host = data.host || 'INFO';
-
-        // Logga allt i stora loggfönstret
-        logOutput.textContent += `[${host}] ${data.status}: ${data.message}\n`;
-        logOutput.scrollTop = logOutput.scrollHeight;
-
-        // Skapa element för host om det inte finns
-        if (!piElements[host] && host !== 'INFO') {
-          const row = document.createElement('div');
-          row.classList.add('pi-status');
-
-          const dot = document.createElement('div');
-          dot.classList.add('dot');
-
-          const text = document.createElement('span');
-          text.classList.add('status-text', 'status-black');
-          text.textContent = host + ': ' + (data.message || '');
-
-          row.appendChild(dot);
-          row.appendChild(text);
-          container.appendChild(row);
-
-          piElements[host] = { dot, text };
-          totalPis = Object.keys(piElements).length;
-        } else if (piElements[host]) {
-          piElements[host].text.textContent = host + ': ' + (data.message || '');
-        }
-
-        // sätt färg på prick och text
-        let dotColor = 'black';
-        let textClass = 'status-black';
-
-        if (data.status === 'done') {
-          dotColor = 'green';
-          textClass = 'status-green';
-          finishedPis++;
-        } else if (data.status === 'error') {
-          dotColor = 'red';
-          textClass = 'status-red';
-          finishedPis++;
-        } else if (/default/i.test(data.message)) {
-          dotColor = 'yellow';
-          textClass = 'status-yellow';
-        }
-
-        if (piElements[host]) {
-          piElements[host].dot.style.backgroundColor = dotColor;
-          piElements[host].text.className = 'status-text ' + textClass;
-        }
-
-        // Uppdatera progress bar
-        if (totalPis > 0) {
-          let percent = Math.min(Math.round((finishedPis / totalPis) * 100), 100);
-          progressBar.style.width = percent + '%';
-          progressBar.textContent = percent + '%';
-        }
-      };
-
-      evtSource.onerror = () => {
-        logOutput.textContent += 'Statusuppdatering avslutad eller anslutningsfel.\n';
-        evtSource.close();
-      };
-    });
-
-    const rebootBtn = document.getElementById('rebootBtn');
-
-    const sendCommand = (commandName, command) => {
+    // Gemensam funktion för att skicka kommando
+    const sendCommand = (commandName, url) => {
       logOutput.textContent += `\nStartar: ${commandName}\n`;
-      const evtSource = new EventSource(`/command-stream?cmd=${encodeURIComponent(command)}`);
+      const evtSource = new EventSource(url);
 
       evtSource.onmessage = (event) => {
         const data = JSON.parse(event.data);
         const host = data.host || 'INFO';
 
-        // Logga allt i stora loggfönstret
+        // Logga i stora fönstret
         logOutput.textContent += `[${host}] ${data.status}: ${data.message}\n`;
         logOutput.scrollTop = logOutput.scrollHeight;
+
+        // Progresshantering för update-stream
+        if (url.startsWith('/update-stream')) {
+          if (!piElements[host] && host !== 'INFO') {
+            const row = document.createElement('div');
+            row.classList.add('pi-status');
+
+            const dot = document.createElement('div');
+            dot.classList.add('dot');
+
+            const text = document.createElement('span');
+            text.classList.add('status-text', 'status-black');
+            text.textContent = host + ': ' + (data.message || '');
+
+            row.appendChild(dot);
+            row.appendChild(text);
+            container.appendChild(row);
+
+            piElements[host] = { dot, text };
+            totalPis = Object.keys(piElements).length;
+          } else if (piElements[host]) {
+            piElements[host].text.textContent = host + ': ' + (data.message || '');
+          }
+
+          let dotColor = 'black';
+          let textClass = 'status-black';
+
+          if (data.status === 'done') {
+            dotColor = 'green';
+            textClass = 'status-green';
+            finishedPis++;
+          } else if (data.status === 'error') {
+            dotColor = 'red';
+            textClass = 'status-red';
+            finishedPis++;
+          } else if (/default/i.test(data.message)) {
+            dotColor = 'yellow';
+            textClass = 'status-yellow';
+          }
+
+          if (piElements[host]) {
+            piElements[host].dot.style.backgroundColor = dotColor;
+            piElements[host].text.className = 'status-text ' + textClass;
+          }
+
+          if (totalPis > 0) {
+            let percent = Math.min(Math.round((finishedPis / totalPis) * 100), 100);
+            progressBar.style.width = percent + '%';
+            progressBar.textContent = percent + '%';
+          }
+        }
       };
 
       evtSource.onerror = () => {
@@ -179,43 +154,33 @@
       };
     };
 
-    rebootBtn.addEventListener('click', () => {
-      sendCommand('Rebootar alla Pis', 'sudo reboot');
+    // Knappar
+    document.getElementById('updateBtn').addEventListener('click', () => {
+      container.innerHTML = '';
+      logOutput.textContent = '';
+      progressBar.style.width = '0%';
+      progressBar.textContent = '0%';
+      piElements = {};
+      finishedPis = 0;
+
+      sendCommand('Uppdatera alla Pis', '/update-stream');
     });
-  </script>
 
-  <h1>Raspberry Pi Manager</h1>
+    document.getElementById('rebootBtn').addEventListener('click', () => {
+      sendCommand('Rebootar alla Pis', '/command-stream?cmd=' + encodeURIComponent('sudo reboot'));
+    });
 
-  <button id="updateBtn">Update Pis</button>
-  <button id="cmdBtn">Run Custom Command</button>
-  <button id="unattendedBtn">Enable Unattended Upgrades</button>
+    document.getElementById('unattendedBtn').addEventListener('click', () => {
+      // Kör via din befintliga endpoint (kan också vara command-stream om du vill testa direktkommando)
+      sendCommand('Aktiverar unattended-upgrades på alla Pis', '/enable-unattended');
+    });
 
-  <pre id="log"></pre>
-
-  <script>
-    const log = document.getElementById('log');
-
-    function runStream(url) {
-      log.textContent = `Kör: ${url}\n`;
-      const evtSource = new EventSource(url);
-
-      evtSource.onmessage = (event) => {
-        const msg = JSON.parse(event.data);
-        log.textContent += `[${msg.status}] ${msg.host || ''} → ${msg.message}\n`;
-      };
-
-      evtSource.onerror = () => {
-        log.textContent += '--- Stream closed ---\n';
-        evtSource.close();
-      };
-    }
-
-    document.getElementById('updateBtn').onclick = () => runStream('/update-stream');
-    document.getElementById('cmdBtn').onclick = () => {
+    document.getElementById('cmdBtn').addEventListener('click', () => {
       const cmd = prompt("Vilket kommando vill du köra?");
-      if (cmd) runStream(`/command-stream?cmd=${encodeURIComponent(cmd)}`);
-    };
-    document.getElementById('unattendedBtn').onclick = () => runStream('/enable-unattended');
+      if (cmd) {
+        sendCommand(`Kör eget kommando: ${cmd}`, '/command-stream?cmd=' + encodeURIComponent(cmd));
+      }
+    });
   </script>
 </body>
 </html>
