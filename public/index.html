@@ -183,5 +183,39 @@
       sendCommand('Rebootar alla Pis', 'sudo reboot');
     });
   </script>
+
+  <h1>Raspberry Pi Manager</h1>
+
+  <button id="updateBtn">Update Pis</button>
+  <button id="cmdBtn">Run Custom Command</button>
+  <button id="unattendedBtn">Enable Unattended Upgrades</button>
+
+  <pre id="log"></pre>
+
+  <script>
+    const log = document.getElementById('log');
+
+    function runStream(url) {
+      log.textContent = `Kör: ${url}\n`;
+      const evtSource = new EventSource(url);
+
+      evtSource.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        log.textContent += `[${msg.status}] ${msg.host || ''} → ${msg.message}\n`;
+      };
+
+      evtSource.onerror = () => {
+        log.textContent += '--- Stream closed ---\n';
+        evtSource.close();
+      };
+    }
+
+    document.getElementById('updateBtn').onclick = () => runStream('/update-stream');
+    document.getElementById('cmdBtn').onclick = () => {
+      const cmd = prompt("Vilket kommando vill du köra?");
+      if (cmd) runStream(`/command-stream?cmd=${encodeURIComponent(cmd)}`);
+    };
+    document.getElementById('unattendedBtn').onclick = () => runStream('/enable-unattended');
+  </script>
 </body>
 </html>
