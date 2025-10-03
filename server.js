@@ -127,49 +127,39 @@ app.get('/command-stream', (req, res) => {
   });
 });
 
-// Aktivera automatiska säkerhetsuppdateringar
-app.get('/enable-unattended', (req, res) => {
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-
-  const sendMessage = (msg) => {
-    res.write(`data: ${JSON.stringify(msg)}\n\n`);
-  };
-
-  // Kommandon för unattended-upgrades
+app.get('/enable-unattended', async (req, res) => {
   const unattendedCmd = `
-  sudo apt-get update &&
-  sudo apt-get install -y unattended-upgrades &&
-  echo 'APT::Periodic::Update-Package-Lists "1";' | sudo tee /etc/apt/apt.conf.d/20auto-upgrades &&
-  echo 'APT::Periodic::Unattended-Upgrade "1";' | sudo tee -a /etc/apt/apt.conf.d/20auto-upgrades
+    sudo apt-get update &&
+    sudo apt-get install -y unattended-upgrades &&
+    echo 'APT::Periodic::Update-Package-Lists "1";' | sudo tee /etc/apt/apt.conf.d/20auto-upgrades &&
+    echo 'APT::Periodic::Unattended-Upgrade "1";' | sudo tee -a /etc/apt/apt.conf.d/20auto-upgrades
   `;
 
   const runCommandOnPi = ({ host, port }) => {
     return new Promise((resolve) => {
       const conn = new Client();
       conn.on('ready', () => {
-        sendMessage({ host, status: 'connected', message: 'SSH ready' });
-
+        console.log(`🔌 Ansluten till ${host}`);
         conn.exec(unattendedCmd, (err, stream) => {
           if (err) {
-            sendMessage({ host, status: 'error', message: err.message });
+            console.error(`❌ Fel på ${host}: ${err.message}`);
+            conn.end();
             resolve();
             return;
           }
 
           stream.on('close', () => {
+            console.log(`✅ Klar på ${host}`);
             conn.end();
-            sendMessage({ host, status: 'done', message: 'Unattended upgrades aktiverat' });
             resolve();
           }).on('data', (data) => {
-            sendMessage({ host, status: 'running', message: data.toString() });
+            console.log(`[${host}] ${data.toString().trim()}`);
           }).stderr.on('data', (data) => {
-            sendMessage({ host, status: 'error', message: data.toString() });
+            console.error(`[${host} ERROR] ${data.toString().trim()}`);
           });
         });
       }).on('error', (err) => {
-        sendMessage({ host, status: 'error', message: err.message });
+        console.error(`🚨 Kunde inte ansluta till ${host}: ${err.message}`);
         resolve();
       }).connect({
         host,
@@ -180,10 +170,10 @@ app.get('/enable-unattended', (req, res) => {
     });
   };
 
-  Promise.all(hosts.map(runCommandOnPi)).then(() => {
-    sendMessage({ status: 'finished', message: 'Alla Pis har fått unattended-upgrades aktiverat' });
-    res.end();
-  });
+  // Kör alla Pis parallellt
+  await Promise.all(hosts.map(runCommandOnPi));
+
+  res.send('Unattended upgrades kördes – kolla loggen i terminalen!');
 });
 
 app.listen(port, () => {
