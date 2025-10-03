@@ -140,8 +140,7 @@ app.get('/enable-unattended', (req, res) => {
   // Kommandon för unattended-upgrades
   const unattendedCmd = `
     sudo apt-get update &&
-    sudo apt-get install -y unattended-upgrades apt-listchanges &&
-    sudo dpkg-reconfigure -f noninteractive unattended-upgrades
+    sudo apt-get install -y unattended-upgrades
   `;
 
   const runCommandOnPi = ({ host, port }) => {
