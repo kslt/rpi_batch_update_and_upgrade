@@ -127,6 +127,64 @@ app.get('/command-stream', (req, res) => {
   });
 });
 
+// Aktivera automatiska säkerhetsuppdateringar
+app.get('/enable-unattended', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+
+  const sendMessage = (msg) => {
+    res.write(`data: ${JSON.stringify(msg)}\n\n`);
+  };
+
+  // Kommandon för unattended-upgrades
+  const unattendedCmd = `
+    sudo apt-get update &&
+    sudo apt-get install -y unattended-upgrades apt-listchanges &&
+    sudo dpkg-reconfigure -f noninteractive unattended-upgrades
+  `;
+
+  const runCommandOnPi = ({ host, port }) => {
+    return new Promise((resolve) => {
+      const conn = new Client();
+      conn.on('ready', () => {
+        sendMessage({ host, status: 'connected', message: 'SSH ready' });
+
+        conn.exec(unattendedCmd, (err, stream) => {
+          if (err) {
+            sendMessage({ host, status: 'error', message: err.message });
+            resolve();
+            return;
+          }
+
+          stream.on('close', () => {
+            conn.end();
+            sendMessage({ host, status: 'done', message: 'Unattended upgrades aktiverat' });
+            resolve();
+          }).on('data', (data) => {
+            sendMessage({ host, status: 'running', message: data.toString() });
+          }).stderr.on('data', (data) => {
+            sendMessage({ host, status: 'error', message: data.toString() });
+          });
+        });
+      }).on('error', (err) => {
+        sendMessage({ host, status: 'error', message: err.message });
+        resolve();
+      }).connect({
+        host,
+        port,
+        username: user,
+        password
+      });
+    });
+  };
+
+  Promise.all(hosts.map(runCommandOnPi)).then(() => {
+    sendMessage({ status: 'finished', message: 'Alla Pis har fått unattended-upgrades aktiverat' });
+    res.end();
+  });
+});
+
 app.listen(port, () => {
   console.log(`Server running at http://localhost:${port}`);
 });
