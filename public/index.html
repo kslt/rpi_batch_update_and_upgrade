@@ -189,8 +189,7 @@
 
     // ---------------- UNATTENDED UPGRADES ----------------
     document.getElementById('unattendedBtn').addEventListener('click', () => {
-      const unattendedCmd = 'sudo DEBIAN_FRONTEND=noninteractive apt-get install -y unattended-upgrades && \
-                            sudo dpkg-reconfigure -f noninteractive unattended-upgrades';
+      const unattendedCmd = 'sudo DEBIAN_FRONTEND=noninteractive apt-get install -y unattended-upgrades && sudo dpkg-reconfigure -f noninteractive unattended-upgrades';
       sendCommand('Aktiverar unattended-upgrades på alla Pis', unattendedCmd);
     });
 
