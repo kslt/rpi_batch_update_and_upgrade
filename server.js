@@ -139,7 +139,10 @@ app.get('/enable-unattended', (req, res) => {
 
   // Kommandon för unattended-upgrades
   const unattendedCmd = `
-    sudo apt-get install -y unattended-upgrades
+  sudo apt-get update &&
+  sudo apt-get install -y unattended-upgrades &&
+  echo 'APT::Periodic::Update-Package-Lists "1";' | sudo tee /etc/apt/apt.conf.d/20auto-upgrades &&
+  echo 'APT::Periodic::Unattended-Upgrade "1";' | sudo tee -a /etc/apt/apt.conf.d/20auto-upgrades
   `;
 
   const runCommandOnPi = ({ host, port }) => {
