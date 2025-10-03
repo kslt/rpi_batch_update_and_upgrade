@@ -139,7 +139,6 @@ app.get('/enable-unattended', (req, res) => {
 
   // Kommandon för unattended-upgrades
   const unattendedCmd = `
-    sudo apt-get update &&
     sudo apt-get install -y unattended-upgrades
   `;
 
